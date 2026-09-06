@@ -20,17 +20,19 @@
     "db:studio": "prisma studio",
     "db:seed": "node --experimental-strip-types --no-warnings scripts/seed.ts",
     "admin:password": "node --experimental-strip-types --no-warnings scripts/hash-password.ts",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
-    "auth:secret": "node --experimental-strip-types --no-warnings scripts/generate-secret.ts"
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build && npm run test:e2e",
+    "auth:secret": "node --experimental-strip-types --no-warnings scripts/generate-secret.ts",
+    "test:e2e": "node tests/e2e/run.mjs"
   },
   "dependencies": {
-    "@prisma/adapter-better-sqlite3": "^7.10.0",
+    "@prisma/adapter-better-sqlite3": "7.10.0",
     "@prisma/client": "7.10.0",
     "busboy": "1.6.0",
     "next": "16.3.4",
+    "prisma": "7.10.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "^0.0.1",
+    "server-only": "0.0.1",
     "zod": "4.5.4"
   },
   "devDependencies": {
@@ -42,7 +44,6 @@
     "@types/react-dom": "19.2.1",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.3.4",
-    "prisma": "7.10.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0"

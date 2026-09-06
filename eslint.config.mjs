@@ -34,7 +34,8 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.ts', 'tests/**/*.ts', 'vitest.config.ts', 'src/lib/logger.ts'],
+    // Scripts and tests report progress to a terminal; that is their output.
+    files: ['scripts/**', 'tests/**', 'vitest.config.mts', 'src/lib/logger.ts'],
     rules: { 'no-console': 'off' },
   },
 );

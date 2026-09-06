@@ -40,17 +40,8 @@ export function clientIp(request: Request): string | null {
 export function assertSameOrigin(request: Request): void {
   if (SAFE_METHODS.has(request.method)) return;
 
-  const config = getConfig();
   const origin = request.headers.get('origin');
   const referer = request.headers.get('referer');
-  const host = request.headers.get('host');
-
-  const allowed = new Set<string>(config.trustedOrigins);
-  allowed.add(config.site.url);
-  if (host) {
-    allowed.add(`https://${host}`);
-    if (process.env.NODE_ENV !== 'production') allowed.add(`http://${host}`);
-  }
 
   const candidate = origin ?? (referer ? safeOrigin(referer) : null);
 
@@ -61,8 +52,45 @@ export function assertSameOrigin(request: Request): void {
     throw forbidden('This request could not be verified as coming from the admin interface.');
   }
 
-  if (!allowed.has(candidate)) {
+  if (!allowedOrigins(request).has(candidate)) {
     throw forbidden('This request came from an unrecognised origin.');
+  }
+}
+
+/**
+ * The origins a state-changing request may legitimately claim to come from.
+ *
+ * Built from the request itself rather than from configuration alone. The
+ * subtlety is the scheme: behind a TLS-terminating reverse proxy — the
+ * documented deployment — the application speaks plain HTTP while the browser
+ * sends `Origin: https://…`, so the scheme has to come from
+ * `X-Forwarded-Proto`. Deriving it from `NEXT_PUBLIC_SITE_URL` alone would
+ * reject every admin write whenever the site is reached by any other name
+ * (an IP address during setup, a staging hostname, `localhost` versus
+ * `127.0.0.1`), which is a confusing failure for something that is not a
+ * security boundary on its own — the per-session CSRF token is.
+ */
+function allowedOrigins(request: Request): Set<string> {
+  const config = getConfig();
+  const allowed = new Set<string>(config.trustedOrigins);
+  allowed.add(config.site.url);
+
+  const host = request.headers.get('host');
+  if (host) {
+    const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+    const requestProto = safeProtocol(request.url);
+    const scheme = forwardedProto ?? requestProto ?? 'https';
+    allowed.add(`${scheme}://${host}`);
+  }
+
+  return allowed;
+}
+
+function safeProtocol(url: string): string | null {
+  try {
+    return new URL(url).protocol.replace(':', '');
+  } catch {
+    return null;
   }
 }
 

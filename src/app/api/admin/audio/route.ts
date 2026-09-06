@@ -67,13 +67,15 @@ export async function GET(request: Request): Promise<Response> {
  *   metadata (field, JSON) — title, artist, type, categoryId, tags, ...
  */
 export async function POST(request: Request): Promise<Response> {
-  const config = getConfig();
   let spool: Awaited<ReturnType<typeof spoolMultipart>> | null = null;
 
   try {
     await ensurePragmas();
+    // Authorise before anything else, including reading configuration: an
+    // anonymous caller should get 401, not a 500 from some unrelated problem.
     await requireAdmin(request, { rule: UPLOAD_RULE, bucket: 'upload' });
 
+    const config = getConfig();
     spool = await spoolMultipart(request, {
       // Spool against the larger of the two ceilings; each part is then held to
       // its own limit by validateUpload, which knows which kind it is.

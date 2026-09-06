@@ -25,11 +25,17 @@ export default async function HomePage() {
     getSiteCopy(),
     listCategories({ publishedOnly: true, withCounts: true }),
     listFeaturedAudio(6),
-    listPublicAudio({ limit: 12, orderBy: 'recent' }),
+    listPublicAudio({ limit: 18, orderBy: 'recent' }),
   ]);
 
   const publicCategories = categories.map(toPublicCategory);
   const hasAnything = recent.length > 0 || publicCategories.length > 0;
+
+  // A track that is already in "Featured" should not appear again eight rows
+  // lower under "Recently added" — on a small library the two lists overlap
+  // almost entirely, and the page reads as though it is repeating itself.
+  const featuredIds = new Set(featured.map((track) => track.id));
+  const recentlyAdded = recent.filter((track) => !featuredIds.has(track.id)).slice(0, 10);
 
   return (
     <div className="page">
@@ -78,7 +84,7 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      {recent.length > 0 ? (
+      {recentlyAdded.length > 0 ? (
         <section className="section" aria-labelledby="recent-heading">
           <div className="section__head">
             <h2 className="section__title" id="recent-heading">
@@ -88,7 +94,7 @@ export default async function HomePage() {
               Browse everything →
             </Link>
           </div>
-          <TrackList tracks={recent.map(toPublicAudio)} />
+          <TrackList tracks={recentlyAdded.map(toPublicAudio)} />
         </section>
       ) : null}
     </div>

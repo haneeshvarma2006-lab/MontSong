@@ -547,12 +547,12 @@ describe('reconciliation', () => {
     await makeOrphan();
 
     const response = await storageStatus(makeRequest('/api/admin/storage'));
-    const body = await readJson<{ orphans: { id: string; status: string; hasTelegramFile: boolean }[] }>(
+    const body = await readJson<{ orphans: { id: string; status: string; hasStoredFile: boolean }[] }>(
       response,
     );
 
     expect(body.orphans).toHaveLength(1);
-    expect(body.orphans[0]).toMatchObject({ status: 'uploaded', hasTelegramFile: true });
+    expect(body.orphans[0]).toMatchObject({ status: 'uploaded', hasStoredFile: true });
   });
 
   it('recovers an orphan without re-uploading it', async () => {
@@ -583,8 +583,8 @@ describe('reconciliation', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await readJson<{ telegramDeleted: boolean }>(response)).toMatchObject({
-      telegramDeleted: true,
+    expect(await readJson<{ storageDeleted: boolean }>(response)).toMatchObject({
+      storageDeleted: true,
     });
     expect(telegram.deletedMessages).toContain(intent.telegramMessageId);
     expect(await prisma.uploadIntent.count({ where: { id: intentId } })).toBe(0);
@@ -604,8 +604,8 @@ describe('reconciliation', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await readJson<{ telegramDeleted: boolean }>(response)).toMatchObject({
-      telegramDeleted: false,
+    expect(await readJson<{ storageDeleted: boolean }>(response)).toMatchObject({
+      storageDeleted: false,
     });
 
     // Not silently dropped — marked so it stays auditable.

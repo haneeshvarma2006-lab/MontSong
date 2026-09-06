@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 
 import { MiniPlayer } from '@/components/player/MiniPlayer';
+import { SiteFooter } from '@/components/SiteFooter';
 import { SiteHeader } from '@/components/SiteHeader';
 import { getSiteCopy, siteUrl } from '@/lib/site';
 
@@ -68,14 +69,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
         <main id="main">{children}</main>
 
-        <footer className="footer">
-          <div className="page footer__inner">
-            <p>
-              {copy.name} · {copy.about}
-            </p>
-            <p>Made for listening.</p>
-          </div>
-        </footer>
+        <SiteFooter siteName={copy.name} about={copy.about} />
 
         <MiniPlayer />
       </body>

@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.github
+data
+media-cache
+tmp-uploads
+coverage
+*.log
+.env
+.env.*
+!.env.example
+docs
+tests
+README.md

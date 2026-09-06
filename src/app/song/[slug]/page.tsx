@@ -192,7 +192,7 @@ export default async function SongPage({ params }: { params: Promise<{ slug: str
               </Link>
             ) : null}
           </div>
-          <TrackList tracks={related.map(toPublicAudio)} />
+          <TrackList tracks={related.map(toPublicAudio)} showCategory={false} />
         </section>
       ) : null}
     </div>

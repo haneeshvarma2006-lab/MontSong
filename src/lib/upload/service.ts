@@ -242,7 +242,7 @@ export interface OrphanedUpload {
   readonly status: string;
   readonly error: string | null;
   readonly createdAt: Date;
-  readonly hasTelegramFile: boolean;
+  readonly hasStoredFile: boolean;
   readonly payload: Record<string, unknown> | null;
 }
 
@@ -277,7 +277,7 @@ export async function listOrphanedUploads(graceMinutes = 10): Promise<OrphanedUp
     status: row.status,
     error: row.error,
     createdAt: row.createdAt,
-    hasTelegramFile: row.telegramFileId !== null,
+    hasStoredFile: row.telegramFileId !== null,
     payload: parsePayload(row.payload),
   }));
 }
@@ -333,16 +333,16 @@ export async function adoptOrphan(intentId: string): Promise<MediaFile> {
  * A message Telegram refuses to delete leaves the row marked `abandoned` so it
  * stops appearing as actionable while staying auditable.
  */
-export async function discardOrphan(intentId: string): Promise<{ telegramDeleted: boolean }> {
+export async function discardOrphan(intentId: string): Promise<{ storageDeleted: boolean }> {
   const intent = await prisma.uploadIntent.findUnique({ where: { id: intentId } });
   if (!intent) throw badRequest('That upload record no longer exists.');
 
-  let telegramDeleted = false;
+  let storageDeleted = false;
   if (intent.telegramMessageId !== null) {
-    telegramDeleted = await getTelegramClient().deleteMessage(intent.telegramMessageId);
+    storageDeleted = await getTelegramClient().deleteMessage(intent.telegramMessageId);
   }
 
-  if (telegramDeleted || intent.telegramMessageId === null) {
+  if (storageDeleted || intent.telegramMessageId === null) {
     await prisma.uploadIntent.delete({ where: { id: intentId } });
   } else {
     await prisma.uploadIntent.update({
@@ -351,7 +351,7 @@ export async function discardOrphan(intentId: string): Promise<{ telegramDeleted
     });
   }
 
-  return { telegramDeleted };
+  return { storageDeleted };
 }
 
 /** Remove committed intents that are older than a week; they are pure history. */

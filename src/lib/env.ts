@@ -148,9 +148,11 @@ export function getConfig(): AppConfig {
   }
 
   const passwordHash = required('ADMIN_PASSWORD_HASH');
-  if (!passwordHash.startsWith('scrypt$')) {
+  if (!passwordHash.startsWith('scrypt:')) {
     throw new ConfigError(
-      'ADMIN_PASSWORD_HASH must be a scrypt hash produced by `npm run admin:password`.',
+      'ADMIN_PASSWORD_HASH must be a scrypt hash produced by `npm run admin:password` ' +
+        '(it looks like "scrypt:32768:8:1:<salt>:<hash>"). If you pasted one that used `$` ' +
+        'separators, your .env loader expanded it as shell variables — regenerate it.',
     );
   }
 

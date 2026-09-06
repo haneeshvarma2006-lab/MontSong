@@ -20,7 +20,14 @@ const scrypt = promisify(scryptCallback) as (
  * hash). Verification is the only hot path and it happens at most a few times
  * a day, behind rate limiting.
  *
- * Encoded form: `scrypt$N$r$p$<salt base64>$<hash base64>`
+ * Encoded form: `scrypt:N:r:p:<salt base64>:<hash base64>`
+ *
+ * The separator is a colon, not the `$` that crypt-style hashes conventionally
+ * use, and that is deliberate: this value lives in an environment variable, and
+ * `.env` loaders (Next's included) perform shell-style `$VAR` expansion on
+ * values. A `$`-separated hash silently loses `$32768$8$1` on load and the
+ * owner is locked out with a confusing error. Base64 never contains a colon, so
+ * this encoding survives every loader intact.
  */
 
 const DEFAULT_N = 32768;
@@ -28,6 +35,9 @@ const DEFAULT_R = 8;
 const DEFAULT_P = 1;
 const KEY_LENGTH = 64;
 const SALT_LENGTH = 16;
+
+export const SEPARATOR = ':';
+export const HASH_PREFIX = `scrypt${SEPARATOR}`;
 
 /** scrypt needs roughly 128 * N * r bytes; give it headroom or it throws. */
 const maxmemFor = (n: number, r: number) => 256 * n * r;
@@ -50,7 +60,7 @@ export async function hashPassword(password: string): Promise<string> {
     DEFAULT_P,
     salt.toString('base64'),
     derived.toString('base64'),
-  ].join('$');
+  ].join(SEPARATOR);
 }
 
 interface ParsedHash {
@@ -62,7 +72,7 @@ interface ParsedHash {
 }
 
 export function parsePasswordHash(encoded: string): ParsedHash | null {
-  const parts = encoded.split('$');
+  const parts = encoded.split(SEPARATOR);
   if (parts.length !== 6 || parts[0] !== 'scrypt') return null;
 
   const n = Number.parseInt(parts[1] ?? '', 10);

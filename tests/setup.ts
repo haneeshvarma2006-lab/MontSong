@@ -84,7 +84,7 @@ process.env.ADMIN_PASSWORD_HASH = [
   1,
   salt.toString('base64'),
   derived.toString('base64'),
-].join('$');
+].join(':');
 
 export const TEST_ENV = {
   workspace,

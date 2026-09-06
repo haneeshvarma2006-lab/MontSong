@@ -61,7 +61,11 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
           All categories
         </Link>
         <h1 className="hero__title" style={{ marginTop: 'var(--s-5)' }}>
-          {category.icon ? <span aria-hidden="true">{category.icon} </span> : null}
+          {category.icon ? (
+            <span className="hero__icon" aria-hidden="true">
+              {category.icon}
+            </span>
+          ) : null}
           {category.name}
         </h1>
         {category.description ? <p className="hero__tagline">{category.description}</p> : null}
@@ -69,6 +73,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
 
       <TrackList
         tracks={tracks.map(toPublicAudio)}
+        showCategory={false}
         emptyTitle="Nothing in this category yet"
         emptyBody="Tracks added to this category will show up here."
       />

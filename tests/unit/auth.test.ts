@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 
+import { assertSameOrigin } from '@/lib/auth/guard';
 import { hashPassword, parsePasswordHash, safeStringEqual, verifyPassword } from '@/lib/auth/password';
 import {
   consume,
@@ -10,11 +11,18 @@ import {
 } from '@/lib/auth/rate-limit';
 
 describe('password hashing', () => {
+  it('uses a separator that survives .env variable expansion', async () => {
+    // A `$`-separated hash is destroyed by dotenv-style `$VAR` expansion, which
+    // locks the owner out of their own site with a baffling error.
+    const hash = await hashPassword('a-sufficiently-long-password');
+    expect(hash).not.toContain('$');
+  });
+
   it('produces a verifiable hash in the documented format', async () => {
     const hash = await hashPassword('a-sufficiently-long-password');
 
-    expect(hash.startsWith('scrypt$')).toBe(true);
-    expect(hash.split('$')).toHaveLength(6);
+    expect(hash.startsWith('scrypt:')).toBe(true);
+    expect(hash.split(':')).toHaveLength(6);
     await expect(verifyPassword('a-sufficiently-long-password', hash)).resolves.toBe(true);
   });
 
@@ -48,11 +56,14 @@ describe('password hashing', () => {
   describe('malformed stored hashes fail closed', () => {
     const cases: [string, string][] = [
       ['empty', ''],
-      ['wrong algorithm', 'bcrypt$1$2$3$4$5'],
-      ['too few parts', 'scrypt$16384$8$1$salt'],
-      ['non-numeric parameters', 'scrypt$x$y$z$c2FsdA==$aGFzaA=='],
-      ['absurd N, which would otherwise allocate gigabytes', 'scrypt$999999999$8$1$c2FsdA==$aGFzaA=='],
-      ['empty salt', 'scrypt$16384$8$1$$aGFzaA=='],
+      ['wrong algorithm', 'bcrypt:1:2:3:4:5'],
+      ['too few parts', 'scrypt:16384:8:1:salt'],
+      ['non-numeric parameters', 'scrypt:x:y:z:c2FsdA==:aGFzaA=='],
+      ['absurd N, which would otherwise allocate gigabytes', 'scrypt:999999999:8:1:c2FsdA==:aGFzaA=='],
+      ['empty salt', 'scrypt:16384:8:1::aGFzaA=='],
+      // The exact shape a `.env` loader leaves behind when it expands a
+      // `$`-separated hash. It must fail closed rather than half-parse.
+      ['a hash mangled by shell-style variable expansion', 'scrypt$$$$c2FsdA==$aGFzaA=='],
     ];
 
     it.each(cases)('%s', async (_name, hash) => {
@@ -133,5 +144,85 @@ describe('rate limiting', () => {
     const blocked = consume('slow', slow);
     expect(blocked.allowed).toBe(false);
     expect(blocked.retryAfterSeconds).toBeGreaterThanOrEqual(9);
+  });
+});
+
+describe('same-origin enforcement', () => {
+  /**
+   * Regression cover for a deployment failure that is easy to reintroduce:
+   * deriving the expected origin from NEXT_PUBLIC_SITE_URL alone rejects every
+   * admin write behind a TLS-terminating proxy (the app sees plain HTTP while
+   * the browser sends `Origin: https://…`) and on any hostname other than the
+   * configured one.
+   */
+  const post = (url: string, headers: Record<string, string>) =>
+    new Request(url, { method: 'POST', headers });
+
+  it('accepts a request whose Origin matches its own Host', () => {
+    expect(() =>
+      assertSameOrigin(
+        post('http://192.168.1.50:3000/api/admin/categories', {
+          host: '192.168.1.50:3000',
+          origin: 'http://192.168.1.50:3000',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('accepts an https Origin when a proxy reports the forwarded scheme', () => {
+    expect(() =>
+      assertSameOrigin(
+        post('http://internal:3000/api/admin/categories', {
+          host: 'music.example.com',
+          origin: 'https://music.example.com',
+          'x-forwarded-proto': 'https',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('accepts the configured site URL', () => {
+    expect(() =>
+      assertSameOrigin(
+        post('http://localhost:3000/api/admin/categories', {
+          host: 'localhost:3000',
+          origin: 'http://localhost:3000',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a genuinely cross-site Origin', () => {
+    expect(() =>
+      assertSameOrigin(
+        post('http://localhost:3000/api/admin/categories', {
+          host: 'localhost:3000',
+          origin: 'https://evil.example',
+        }),
+      ),
+    ).toThrow(/unrecognised origin/);
+  });
+
+  it('rejects a state-changing request with no Origin and no Referer', () => {
+    expect(() =>
+      assertSameOrigin(post('http://localhost:3000/api/admin/categories', { host: 'localhost:3000' })),
+    ).toThrow(/could not be verified/);
+  });
+
+  it('falls back to the Referer when no Origin is sent', () => {
+    expect(() =>
+      assertSameOrigin(
+        post('http://localhost:3000/api/admin/categories', {
+          host: 'localhost:3000',
+          referer: 'http://localhost:3000/admin/categories',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('does not check a safe method', () => {
+    expect(() =>
+      assertSameOrigin(new Request('http://localhost:3000/api/admin/categories')),
+    ).not.toThrow();
   });
 });

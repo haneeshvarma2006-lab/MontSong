@@ -33,7 +33,7 @@ interface StorageReport {
     status: string;
     error: string | null;
     createdAt: string;
-    hasTelegramFile: boolean;
+    hasStoredFile: boolean;
   }[];
   warnings: string[];
 }
@@ -130,11 +130,11 @@ export function StoragePanel() {
     setBusyId(id);
     setError(null);
     try {
-      const result = await api.delete<{ telegramDeleted: boolean }>(
+      const result = await api.delete<{ storageDeleted: boolean }>(
         `/api/admin/storage/orphans/${id}`,
       );
       setNotice(
-        result.telegramDeleted
+        result.storageDeleted
           ? 'Discarded, and the stored copy was removed.'
           : 'Marked as abandoned. The stored copy could not be removed automatically.',
       );
@@ -291,7 +291,7 @@ export function StoragePanel() {
                     <SpinnerIcon size={16} />
                   ) : (
                     <>
-                      {orphan.hasTelegramFile ? (
+                      {orphan.hasStoredFile ? (
                         <button
                           type="button"
                           className="btn btn--ghost btn--sm"

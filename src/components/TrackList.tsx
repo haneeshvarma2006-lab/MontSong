@@ -20,10 +20,13 @@ export function TrackList({
   tracks,
   emptyTitle = 'Nothing here yet',
   emptyBody,
+  showCategory = true,
 }: {
   tracks: readonly PublicAudio[];
   emptyTitle?: string;
   emptyBody?: string;
+  /** Off on a category page, where repeating the category on every row is noise. */
+  showCategory?: boolean;
 }) {
   if (tracks.length === 0) {
     return (
@@ -40,14 +43,25 @@ export function TrackList({
   return (
     <ul className="tracks">
       {tracks.map((track, index) => (
-        <TrackRow key={track.id} track={track} index={index} />
+        <TrackRow key={track.id} track={track} index={index} showCategory={showCategory} />
       ))}
     </ul>
   );
 }
 
-const TrackRow = memo(function TrackRow({ track, index }: { track: PublicAudio; index: number }) {
+const TrackRow = memo(function TrackRow({
+  track,
+  index,
+  showCategory,
+}: {
+  track: PublicAudio;
+  index: number;
+  showCategory: boolean;
+}) {
   const { isCurrent, isPlaying } = useIsCurrent(track.id);
+  const meta = [track.artist, showCategory ? track.category?.name : null, track.format].filter(
+    Boolean,
+  ) as string[];
 
   return (
     <li
@@ -64,11 +78,12 @@ const TrackRow = memo(function TrackRow({ track, index }: { track: PublicAudio; 
           {track.title}
         </Link>
         <p className="track__meta">
-          {track.artist ? <span>{track.artist}</span> : null}
-          {track.artist && track.category ? <span aria-hidden="true">·</span> : null}
-          {track.category ? <span>{track.category.name}</span> : null}
-          <span aria-hidden="true">·</span>
-          <span>{track.format}</span>
+          {meta.map((part, position) => (
+            <span key={part}>
+              {position > 0 ? <span aria-hidden="true"> · </span> : null}
+              {part}
+            </span>
+          ))}
         </p>
       </div>
 
