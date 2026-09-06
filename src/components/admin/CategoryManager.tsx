@@ -210,28 +210,30 @@ export function CategoryManager({ initial }: { initial: AdminCategory[] }) {
                 </p>
               </div>
 
-              <span className={`badge ${category.isPublished ? 'badge--live' : 'badge--draft'}`}>
-                {category.isPublished ? 'Live' : 'Hidden'}
-              </span>
+              <div className="sortable__actions">
+                <span className={`badge ${category.isPublished ? 'badge--live' : 'badge--draft'}`}>
+                  {category.isPublished ? 'Live' : 'Hidden'}
+                </span>
 
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                onClick={() => setEditing(category)}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className="btn btn--danger btn--sm"
-                onClick={() => {
-                  setPendingDelete(category);
-                  setDeleteTarget('');
-                }}
-                disabled={busy}
-              >
-                {busy ? <SpinnerIcon size={14} /> : 'Delete'}
-              </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={() => setEditing(category)}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--danger btn--sm"
+                  onClick={() => {
+                    setPendingDelete(category);
+                    setDeleteTarget('');
+                  }}
+                  disabled={busy}
+                >
+                  {busy ? <SpinnerIcon size={14} /> : 'Delete'}
+                </button>
+              </div>
             </li>
           ))}
         </ul>

@@ -275,40 +275,38 @@ export function StoragePanel() {
                     </p>
                   </div>
 
-                  <span
-                    className={`badge ${
-                      orphan.status === 'uploaded'
-                        ? 'badge--warn'
-                        : orphan.status === 'failed'
-                          ? 'badge--draft'
-                          : 'badge--warn'
-                    }`}
-                  >
-                    {orphan.status}
-                  </span>
+                  <div className="sortable__actions">
+                    <span
+                      className={`badge ${
+                        orphan.status === 'failed' ? 'badge--draft' : 'badge--warn'
+                      }`}
+                    >
+                      {orphan.status}
+                    </span>
 
-                  {busyId === orphan.id ? (
-                    <SpinnerIcon size={16} />
-                  ) : (
-                    <>
-                      {orphan.hasStoredFile ? (
+                    {busyId === orphan.id ? (
+                      <SpinnerIcon size={16} />
+                    ) : (
+                      <>
+                        {orphan.hasStoredFile ? (
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--sm"
+                            onClick={() => void adopt(orphan.id)}
+                          >
+                            Recover
+                          </button>
+                        ) : null}
                         <button
                           type="button"
-                          className="btn btn--ghost btn--sm"
-                          onClick={() => void adopt(orphan.id)}
+                          className="btn btn--danger btn--sm"
+                          onClick={() => void discard(orphan.id)}
                         >
-                          Recover
+                          Discard
                         </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="btn btn--danger btn--sm"
-                        onClick={() => void discard(orphan.id)}
-                      >
-                        Discard
-                      </button>
-                    </>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

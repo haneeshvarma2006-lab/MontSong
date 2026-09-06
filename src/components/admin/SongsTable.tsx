@@ -194,7 +194,7 @@ export function SongsTable({ categories }: { categories: AdminCategory[] }) {
         </p>
       ) : null}
 
-      <div className="form-grid form-grid--2">
+      <div className="stack">
         <div className="field">
           <label className="field__label" htmlFor="song-search">
             Search
@@ -210,7 +210,7 @@ export function SongsTable({ categories }: { categories: AdminCategory[] }) {
           />
         </div>
 
-        <div className="form-grid form-grid--2" style={{ gap: 'var(--s-3)' }}>
+        <div className="filter-row">
           <div className="field">
             <label className="field__label" htmlFor="song-category">
               Category

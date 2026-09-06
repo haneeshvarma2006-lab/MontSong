@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { CoverArt } from '@/components/CoverArt';
 import { SongActions } from '@/components/SongActions';
 import { TrackList } from '@/components/TrackList';
 import { formatBytes, formatDuration } from '@/lib/format';
@@ -108,24 +109,7 @@ export default async function SongPage({ params }: { params: Promise<{ slug: str
 
       <article className="song">
         <div>
-          {track.coverUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              className="song__art"
-              src={track.coverUrl}
-              alt=""
-              width={240}
-              height={240}
-              loading="eager"
-              decoding="async"
-            />
-          ) : (
-            <div className="song__art">
-              <span className="song__art-placeholder" aria-hidden="true">
-                ♪
-              </span>
-            </div>
-          )}
+          <CoverArt src={track.coverUrl} eager />
         </div>
 
         <div>
