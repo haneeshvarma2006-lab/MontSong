@@ -36,6 +36,37 @@ Browser  →  MontSong  →  Telegram Bot API  →  private channel
 
 ---
 
+## See it first, without a Telegram bot
+
+If you don't have a bot yet — or just want to look around — you don't need one:
+
+```bash
+npm install
+npm run preview
+```
+
+That starts the site at <http://localhost:3000> with a demo library already in
+it, and prints the admin sign-in details. Everything works: browsing, search,
+playing, seeking, downloading, and the full admin including uploading your own
+audio files.
+
+Storage is a stand-in that runs on your own machine for the length of the
+session — no bot, no Telegram account, nothing leaves your computer. Uploads
+live in that process's memory and disappear when you stop it.
+
+| | |
+| --- | --- |
+| `npm run preview` | Start it (builds first, about 20 seconds) |
+| `npm run preview -- --fresh` | Wipe the demo library and rebuild it |
+| `npm run preview -- --port 4000` | Use a different port |
+| Ctrl-C | Stop |
+
+The workspace lives in `.preview/` and is gitignored; delete it to reset.
+When your bot is ready, follow the setup below — the preview never touches
+your real `.env` or database.
+
+---
+
 ## Requirements
 
 - **Node.js 20.11 or newer** (22 recommended)
@@ -106,6 +137,7 @@ download limit entirely. It is Telegram's own software, not a workaround.
 
 | Command | What it does |
 | --- | --- |
+| `npm run preview` | The whole site with a demo library, no Telegram bot needed |
 | `npm run dev` | Development server on :3000 |
 | `npm run build` | Production build |
 | `npm start` | Serve the production build |

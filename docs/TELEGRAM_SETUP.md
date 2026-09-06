@@ -6,6 +6,11 @@ private channel the bot can post into.
 Nothing here is exposed to visitors. The token lives in an environment variable
 on the server and is never sent to a browser.
 
+> **Not ready to make a bot yet?** `npm run preview` runs the entire site
+> against a stand-in storage service on your own machine — browse, play,
+> download, upload, everything — with no bot and no Telegram account. See the
+> README. Come back here when you are ready to store files for real.
+
 ---
 
 ## 1. Create the bot

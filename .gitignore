@@ -151,3 +151,6 @@ vite.config.ts.timestamp-*
 /tmp-uploads/
 # Generated Prisma client
 /src/generated/
+
+# Local preview workspace (npm run preview) — disposable
+/.preview/

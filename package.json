@@ -10,6 +10,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
+    "preview": "node scripts/preview.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
