@@ -1,0 +1,279 @@
+// MontSong — data model
+//
+// Provider: SQLite. Rationale (see docs/ARCHITECTURE.md):
+//   * single-owner site, single long-running Node process
+//   * a persistent volume is required anyway for the media cache, so the
+//     database costs no extra infrastructure
+//   * WAL mode gives concurrent readers + one writer, which is far beyond
+//     what this workload needs, with real transactions and migrations
+//   * migrating to PostgreSQL is a provider swap + regenerated migrations;
+//     no application code depends on SQLite specifics except two raw
+//     queries in src/lib/search.ts, which are documented there.
+//
+// SQLite/Prisma constraints observed here: no native enums (validated string
+// unions instead, see src/lib/constants.ts), no scalar lists, no citext.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// The single site owner. The table is capped to one row by application
+/// logic (bootstrapAdmin) — there is no self-service registration.
+model AdminUser {
+  id           String @id
+  username     String @unique
+  passwordHash String
+
+  /// Brute-force protection state. Cleared on a successful login.
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
+
+  @@map("admin_users")
+}
+
+/// Server-side session records. The cookie carries an opaque random token;
+/// only its SHA-256 hash is stored, so a database leak cannot be replayed.
+model Session {
+  id         String @id
+  userId     String
+  tokenHash  String @unique
+  /// Per-session secret used to derive the double-submit CSRF token.
+  csrfSecret String
+
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+
+  userAgent String?
+  ipHash    String?
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// A blob stored in Telegram. One row per distinct Telegram file.
+/// `kind` is "audio" or "image".
+model MediaFile {
+  id   String @id
+  kind String
+
+  // --- Telegram coordinates (never exposed to the public API) ---
+  telegramChatId       String
+  telegramMessageId    Int?
+  telegramFileId       String
+  telegramFileUniqueId String @unique
+
+  // --- Descriptive metadata, captured at upload time ---
+  mimeType    String
+  fileName    String
+  fileSize    Int
+  durationSec Int?
+  width       Int?
+  height      Int?
+  sha256      String?
+
+  /// Cached result of getFile. Telegram guarantees the path for at least an
+  /// hour; we refresh well before that. Never sent to the client.
+  telegramFilePath          String?
+  telegramFilePathFetchedAt DateTime?
+
+  /// "stored" | "orphaned" | "deleted"
+  status String @default("stored")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  audioTracks        Audio[]    @relation("AudioMedia")
+  audioCovers        Audio[]    @relation("AudioCover")
+  categoryCovers     Category[] @relation("CategoryCover")
+
+  @@index([kind, createdAt])
+  @@index([status])
+  @@map("media_files")
+}
+
+/// Fully owner-managed. Nothing about categories is hardcoded.
+model Category {
+  id          String  @id
+  name        String
+  slug        String  @unique
+  description String?
+  /// A single emoji or short glyph rendered next to the name.
+  icon        String?
+  /// Optional accent colour (hex, e.g. "#e0523f") used for the category card.
+  accent      String?
+
+  coverMediaId String?
+
+  sortOrder   Int     @default(0)
+  isPublished Boolean @default(true)
+  isFeatured  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cover  MediaFile? @relation("CategoryCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+  audios Audio[]
+
+  @@index([isPublished, sortOrder])
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+model Audio {
+  id          String  @id
+  title       String
+  slug        String  @unique
+  artist      String?
+  /// "song" | "ringtone" | "bgm" | "other" — see AUDIO_TYPES.
+  type        String  @default("song")
+  description String?
+
+  categoryId   String?
+  mediaId      String
+  coverMediaId String?
+
+  downloadCount Int @default(0)
+  playCount     Int @default(0)
+
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  isFeatured  Boolean  @default(false)
+  publishedAt DateTime?
+
+  /// Denormalised lowercase haystack: title + artist + category + tags.
+  /// Kept in sync by src/lib/repositories/audio.ts.
+  searchText String @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  media    MediaFile  @relation("AudioMedia", fields: [mediaId], references: [id], onDelete: Restrict)
+  cover    MediaFile? @relation("AudioCover", fields: [coverMediaId], references: [id], onDelete: SetNull)
+
+  tags      TagOnAudio[]
+  downloads DownloadEvent[]
+
+  @@index([categoryId, sortOrder])
+  @@index([isPublished, createdAt])
+  @@index([isPublished, downloadCount])
+  @@index([isPublished, isFeatured, sortOrder])
+  @@index([mediaId])
+  @@map("audio")
+}
+
+model Tag {
+  id        String   @id
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  audios TagOnAudio[]
+
+  @@map("tags")
+}
+
+model TagOnAudio {
+  audioId String
+  tagId   String
+
+  audio Audio @relation(fields: [audioId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([audioId, tagId])
+  @@index([tagId])
+  @@map("tags_on_audio")
+}
+
+/// Privacy-preserving analytics: no IP, no user agent, no identifiers.
+/// Only "a download of track X happened at time T".
+model DownloadEvent {
+  id        String   @id
+  audioId   String
+  /// "download" | "stream"
+  kind      String
+  /// UTC day bucket, "YYYY-MM-DD", for cheap grouped queries.
+  day       String
+  createdAt DateTime @default(now())
+
+  audio Audio @relation(fields: [audioId], references: [id], onDelete: Cascade)
+
+  @@index([audioId, createdAt])
+  @@index([createdAt])
+  @@index([day])
+  @@map("download_events")
+}
+
+/// Bookkeeping for the on-disk media cache. The files themselves live under
+/// MEDIA_CACHE_DIR; this table is the LRU index used for eviction.
+model CachedFile {
+  fileUniqueId   String   @id
+  path           String
+  bytes          Int
+  createdAt      DateTime @default(now())
+  lastAccessedAt DateTime @default(now())
+
+  @@index([lastAccessedAt])
+  @@map("cached_files")
+}
+
+/// Crash-safe upload bookkeeping.
+///
+/// A row is written *before* the file is handed to Telegram and updated the
+/// moment Telegram returns identifiers, so a failure anywhere after that
+/// point leaves a durable record instead of an untracked Telegram message.
+/// The admin "Storage" screen surfaces every non-committed row.
+model UploadIntent {
+  id String @id
+
+  originalFileName String
+  mimeType         String
+  fileSize         Int
+  sha256           String?
+
+  /// "received" | "uploading" | "uploaded" | "committed" | "failed" | "abandoned"
+  status String @default("received")
+  error  String?
+
+  telegramChatId       String?
+  telegramMessageId    Int?
+  telegramFileId       String?
+  telegramFileUniqueId String?
+
+  /// Set once the intent has been turned into an Audio row.
+  audioId String?
+
+  /// Metadata submitted with the upload, kept so an orphan can be adopted
+  /// later without re-uploading. JSON-encoded.
+  payload String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@map("upload_intents")
+}
+
+/// Small key/value store for owner-editable site copy (title, tagline...).
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("site_settings")
+}
