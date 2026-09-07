@@ -1,0 +1,37 @@
+# Local production-shaped run.
+#
+#   cp .env.example .env      # then fill it in
+#   docker compose up --build
+#
+# The named volume holds the database, the media cache and the upload spool.
+# Back that up and you have backed up everything the site cannot rebuild.
+
+services:
+  montsong:
+    build:
+      context: .
+      args:
+        # Baked into the client bundle at build time, so rebuild after changing.
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-MontSong}
+    restart: unless-stopped
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      # Secrets come from the environment, never from the image.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN}
+      TELEGRAM_STORAGE_CHAT_ID: ${TELEGRAM_STORAGE_CHAT_ID:?set TELEGRAM_STORAGE_CHAT_ID}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-}
+      TELEGRAM_API_LOCAL_MODE: ${TELEGRAM_API_LOCAL_MODE:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?set ADMIN_USERNAME}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?set ADMIN_PASSWORD_HASH}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-MontSong}
+      MAX_AUDIO_UPLOAD_BYTES: ${MAX_AUDIO_UPLOAD_BYTES:-20971520}
+      MEDIA_CACHE_MAX_BYTES: ${MEDIA_CACHE_MAX_BYTES:-2147483648}
+    volumes:
+      - montsong-data:/data
+
+volumes:
+  montsong-data:

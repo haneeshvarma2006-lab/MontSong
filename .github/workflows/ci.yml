@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # Test-only values. The suites and the build never contact Telegram —
+      # integration tests use a stand-in Bot API, and the end-to-end run starts
+      # one on localhost. No real secret is needed, or wanted, in CI.
+      DATABASE_URL: file:./data/ci.db
+      TELEGRAM_BOT_TOKEN: '000000000:CI-PLACEHOLDER-TOKEN-NOT-A-REAL-ONE'
+      TELEGRAM_STORAGE_CHAT_ID: '-1000000000000'
+      ADMIN_USERNAME: ci-owner
+      # scrypt hash of "ci-placeholder-password". Colon-separated so no env
+      # loader mangles it — see docs/SECURITY.md.
+      ADMIN_PASSWORD_HASH: 'scrypt:16384:8:1:Y2ktc2FsdC0xNi1ieXRlcw==:Y2ktbm90LWEtcmVhbC1oYXNoLXZhbHVlLXVzZWQtb25seS10by1zYXRpc2Z5LXRoZS1mb3JtYXQtY2hlY2s='
+      AUTH_SECRET: 'Q0ktb25seS1zZWNyZXQtbmV2ZXItdXNlZC1pbi1wcm9kdWN0aW9uLXZhbHVlIQ=='
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_SITE_NAME: MontSong
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate the Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: End-to-end
+        run: npm run test:e2e

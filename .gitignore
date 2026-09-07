@@ -141,3 +141,16 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# --- MontSong ---
+# Local SQLite database + WAL sidecars
+/data/
+# On-disk media cache (regenerated from Telegram on demand)
+/media-cache/
+# Temporary upload spool
+/tmp-uploads/
+# Generated Prisma client
+/src/generated/
+
+# Local preview workspace (npm run preview) — disposable
+/.preview/
