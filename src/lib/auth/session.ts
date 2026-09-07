@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 
 import {
@@ -19,10 +19,14 @@ import type { AdminUser, Session } from '@/generated/prisma';
 /**
  * Server-side sessions.
  *
- * The cookie carries an opaque 32-byte random token. Only its SHA-256 hash is
- * stored, so read access to the database does not yield a usable session — the
- * same reasoning as never storing a plaintext password. Revocation is a row
- * delete, which is what makes "sign out everywhere" real rather than cosmetic.
+ * The cookie carries an opaque 32-byte random token. Only a keyed hash of it
+ * is stored, so read access to the database does not yield a usable session —
+ * the same reasoning as never storing a plaintext password.
+ *
+ * Revocation works three ways, and all three are real rather than cosmetic:
+ * deleting the row, rotating AUTH_SECRET (which changes the key every stored
+ * hash was computed under), and rotating ADMIN_PASSWORD_HASH (checked against
+ * the session's own user on every request).
  *
  * Cookie flags: HttpOnly (no script access), SameSite=Lax (the admin is only
  * ever reached by top-level navigation, and Lax still blocks cross-site POSTs),
@@ -34,8 +38,21 @@ export interface AuthenticatedSession {
   readonly user: AdminUser;
 }
 
+/**
+ * Hash a session token for storage, keyed with AUTH_SECRET.
+ *
+ * The key is what makes rotating AUTH_SECRET a real revocation: every stored
+ * hash was computed under the old key, so after a rotation no presented token
+ * can hash to a stored row and every session is gone by construction. An
+ * unkeyed digest here would leave `sign out everywhere` documented but
+ * inoperative — the owner rotates the secret, believes they have ejected
+ * whoever held a stolen cookie, and that cookie keeps working.
+ *
+ * It is still a hash, not an encryption: the database never holds anything
+ * that can be replayed as a cookie.
+ */
 function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+  return createHmac('sha256', getConfig().auth.secret).update(token).digest('hex');
 }
 
 function isProduction(): boolean {
@@ -46,9 +63,10 @@ function isProduction(): boolean {
  * Bootstrap the single owner row from the environment.
  *
  * There is no registration flow by design: the owner is whoever holds
- * ADMIN_USERNAME and ADMIN_PASSWORD_HASH. This keeps them in sync — a rotated
- * password in the environment takes effect on the next login, and rotating it
- * invalidates every existing session.
+ * ADMIN_USERNAME and ADMIN_PASSWORD_HASH. This reconciles the stored row with
+ * the environment on sign-in. Existing sessions do not wait for that:
+ * getSessionFromToken rejects any session whose user still carries a different
+ * password hash, so a rotation takes effect on the next request either way.
  */
 export async function ensureAdminUser(): Promise<AdminUser> {
   const config = getConfig();
@@ -161,6 +179,19 @@ export async function getSessionFromToken(token: string | undefined): Promise<Au
 
   if (session.expiresAt.getTime() <= Date.now()) {
     await prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
+    return null;
+  }
+
+  // A session is only valid while the credential it was minted under is still
+  // the configured one. The stored hash is reconciled with the environment by
+  // ensureAdminUser, which runs on sign-in — so without this check, changing
+  // ADMIN_PASSWORD_HASH and restarting would revoke nothing until somebody
+  // happened to attempt a login, which an attacker holding a live cookie has
+  // no reason to do. Comparing here makes the rotation take effect on the
+  // attacker's very next request instead.
+  if (session.user.passwordHash !== getConfig().auth.passwordHash) {
+    await prisma.session.deleteMany({ where: { userId: session.userId } }).catch(() => undefined);
+    logger.info('auth.session_rejected_stale_credential', { userId: session.userId });
     return null;
   }
 

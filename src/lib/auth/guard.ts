@@ -176,7 +176,15 @@ export function readSessionCookie(request: Request): string | undefined {
     if (index === -1) continue;
     const name = part.slice(0, index).trim();
     if (name === SESSION_COOKIE_NAME) {
-      return decodeURIComponent(part.slice(index + 1).trim());
+      const raw = part.slice(index + 1).trim();
+      try {
+        return decodeURIComponent(raw);
+      } catch {
+        // `Cookie: montsong_session=%` is malformed, not privileged. Letting
+        // the URIError escape turned a junk cookie into a 500; a junk cookie
+        // is simply not a session.
+        return undefined;
+      }
     }
   }
   return undefined;

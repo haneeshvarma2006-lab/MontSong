@@ -43,7 +43,7 @@ async function main(): Promise<void> {
 
   console.log('\nAdd this to your .env (or your host\'s environment settings):\n');
   console.log(`ADMIN_PASSWORD_HASH="${hash}"`);
-  console.log('\nThe next sign-in will use it. Changing it signs out every existing session.\n');
+  console.log('\nRestart the app to apply it. Every existing session is signed out.\n');
 }
 
 void main();

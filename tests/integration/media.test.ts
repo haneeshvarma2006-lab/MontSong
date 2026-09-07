@@ -328,10 +328,39 @@ describe('downloading', () => {
     expect(headerText).not.toContain('t.me');
     expect(headerText).not.toContain('file_id');
 
-    // The ETag is derived from a Telegram id, so check the id itself is absent.
+    // No storage identifier of any kind. The ETag used to embed
+    // telegramFileUniqueId verbatim, and this assertion was written around
+    // that omission; it is now hashed, so all three can be asserted.
     const media = await prisma.mediaFile.findFirstOrThrow();
     expect(headerText).not.toContain(media.telegramFileId.toLowerCase());
     expect(headerText).not.toContain(media.telegramChatId.toLowerCase());
+    expect(headerText).not.toContain(media.telegramFileUniqueId.toLowerCase());
+  });
+
+  it('still returns a stable, immutable ETag that satisfies a conditional request', async () => {
+    const { audio } = await publishTrack(trackBytes(4_000));
+
+    const first = await streamGet(
+      makeRequest(`/api/audio/${audio.id}/stream`),
+      params({ id: audio.id }),
+    );
+    const etag = first.headers.get('etag');
+    expect(etag).toMatch(/^"[A-Za-z0-9_-]+"$/);
+
+    // Stable across requests — a hashed validator is worthless if it moves.
+    const second = await streamGet(
+      makeRequest(`/api/audio/${audio.id}/stream`),
+      params({ id: audio.id }),
+    );
+    expect(second.headers.get('etag')).toBe(etag);
+
+    const conditional = await streamGet(
+      makeRequest(`/api/audio/${audio.id}/stream`, {
+        headers: { 'if-none-match': etag as string },
+      }),
+      params({ id: audio.id }),
+    );
+    expect(conditional.status).toBe(304);
   });
 
   it('counts a full download', async () => {

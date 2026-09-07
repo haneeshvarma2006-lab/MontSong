@@ -83,15 +83,22 @@ plaintext is never stored, never logged, and never leaves the request. A
 malformed or corrupt stored hash fails closed — it returns false rather than
 throwing, so a misconfiguration rejects the login instead of 500-ing.
 
-**Sessions.** The cookie carries an opaque 32-byte random token; only its
-SHA-256 hash is stored, so read access to the database does not yield a usable
-session. Sign-out deletes the row, so a captured cookie dies with it — there is
-a test that replays a captured cookie after sign-out and asserts it fails.
-Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in production. Expired
-sessions are deleted on sight.
+**Sessions.** The cookie carries an opaque 32-byte random token; only
+`HMAC(AUTH_SECRET, token)` is stored, so read access to the database does not
+yield a usable session. Sign-out deletes the row, so a captured cookie dies
+with it — there is a test that replays a captured cookie after sign-out and
+asserts it fails. Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` in
+production. Expired sessions are deleted on sight.
 
-**Rotating the password revokes every session**, because `ensureAdminUser`
-notices the hash changed and deletes them.
+**Three things revoke a session, and all three are real.** Deleting the row.
+Rotating `AUTH_SECRET`, which changes the key every stored hash was computed
+under, so no presented token can match anything. Rotating
+`ADMIN_PASSWORD_HASH`, which `getSessionFromToken` notices on the very next
+request by comparing the session's user against the configured hash — it does
+not wait for someone to attempt a login.
+
+Both rotations were inoperative until the review described below; the
+regression tests now hold a captured token and assert it stops working.
 
 ### Brute force
 
@@ -253,11 +260,12 @@ not useful.
 
 ---
 
-## Two real bugs this review process found
+## What the reviews found
 
-Both were found by the end-to-end suite — which exists precisely because a
-whole class of defect is invisible to tests that call route handlers as
-functions — and both now have regression cover.
+### Round one — the end-to-end suite
+
+Both of these were invisible to tests that call route handlers as functions,
+which is why the end-to-end suite exists. Both have regression cover.
 
 1. **Soft 404s and a client-side admin redirect.** A root `loading.tsx` opened a
    Suspense boundary that streamed `200 OK` before `notFound()` or `redirect()`
@@ -273,12 +281,69 @@ A third, found by an integration test: `adoptOrphan` did not close out the
 upload intent, so a recovered file would reappear as an orphan forever and
 adopting it twice would create a duplicate media row.
 
+### Round two — pre-release review
+
+4. **Both "sign out everywhere" levers were inoperative.** The more serious of
+   the two findings, because the failure mode is a false sense of safety: an
+   owner who believes they have ejected a stolen session had not.
+
+   `hashToken` was an *unkeyed* SHA-256, so `AUTH_SECRET` played no part in
+   session lookup and rotating it left every session row matchable. Separately,
+   the `deleteMany` that clears sessions on a password change lived inside
+   `ensureAdminUser`, which is called from exactly one place — the login
+   handler. Changing `ADMIN_PASSWORD_HASH` and restarting therefore revoked
+   nothing until somebody attempted a login, which an attacker holding a live
+   cookie has no reason to do.
+
+   The stored hash is now `HMAC(AUTH_SECRET, token)`, so rotation invalidates
+   every row by construction; and `getSessionFromToken` rejects any session
+   whose user still carries a different password hash, so a password rotation
+   takes effect on the attacker's next request. `tests/integration/session-revocation.test.ts`
+   covers both from the attacker's side — it holds a captured token and checks
+   it stops working — and each half was confirmed to fail against the code as
+   it stood before the fix.
+
+5. **A published admin password in preview mode.** `npm run preview` signed in
+   with a constant committed to this repository, and `next start` binds every
+   interface. Anyone on the same network as a running preview could open it,
+   sign in as the owner, and upload files. The password is now generated per
+   run, and the preview binds `127.0.0.1`.
+
+6. **A storage identifier in a public ETag.** `serveMedia` emitted
+   `"<telegram_file_unique_id>-<size>"`. Not exploitable — that identifier
+   cannot fetch anything without the bot token — but it contradicted this
+   document and the module's own comment, and an existing test had been written
+   around the omission. The ETag is now a digest, which keeps the validator
+   stable and immutable while telling a client nothing.
+
+7. **A malformed cookie returned 500.** `Cookie: montsong_session=%` reached an
+   unguarded `decodeURIComponent`. A junk cookie is simply not a session; it now
+   answers `401`.
+
+### Assessed and not acted on
+
+- **`mysql2` advisories (4 high) reported by `npm audit`.** It reaches this
+  project only as a transitive dependency of the Prisma CLI. The schema is
+  SQLite, the runtime adapter is `better-sqlite3`, no hand-written code
+  references MySQL, and `mysql2` is not present in the built server bundle.
+  Both advisories require an actual connection to a MySQL server, which never
+  occurs. The offered remedy downgrades Prisma 7 to 6 — a breaking change for
+  no security benefit. Re-assess if a MySQL datasource is ever added.
+
+- **`/api/admin/auth/logout` has no CSRF token check.** A cross-site POST can
+  sign the owner out. Deliberate: the cost is a nuisance, and requiring a token
+  to log out means a stale token can trap someone in a session they want to end.
+
+- **Rate-limit keys derive from `X-Forwarded-For`,** which is client-controlled
+  when no proxy normalises it. The per-account lockout, which does not depend on
+  the address, is what actually bounds password guessing.
+
 ---
 
 ## Running the checks
 
 ```bash
-npm run verify        # lint, typecheck, 233 tests, production build, end-to-end
+npm run verify        # lint, typecheck, tests, production build, end-to-end
 ```
 
 The security-relevant assertions live in:
@@ -289,6 +354,7 @@ The security-relevant assertions live in:
 - `tests/integration/auth.test.ts` — every admin route anonymously, CSRF, lockout
 - `tests/integration/upload.test.ts` — upload validation and rejection paths
 - `tests/integration/media.test.ts` — no storage detail in any response header
+- `tests/integration/session-revocation.test.ts` — rotating either secret really does revoke
 - `tests/e2e/run.mjs` — the whole surface over real HTTP
 
 ---

@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 
@@ -48,9 +49,19 @@ export async function serveMedia(options: ServeOptions): Promise<Response> {
   const { media, request } = options;
   const size = media.fileSize;
 
-  // Telegram files are immutable, so a strong validator over the unique id and
-  // size lets a repeat visitor skip the transfer entirely.
-  const etag = `"${media.telegramFileUniqueId}-${size}"`;
+  // Telegram files are immutable, so a strong validator over the stored
+  // identity and size lets a repeat visitor skip the transfer entirely.
+  //
+  // Hashed rather than used directly. The identifier cannot be used to fetch
+  // anything without the bot token, so emitting it raw was not exploitable —
+  // but this project's claim is that no storage identifier appears in any
+  // public response, and an ETag is about as public as a header gets. A digest
+  // keeps the validator stable and immutable while making the header say
+  // nothing about where the file lives.
+  const etag = `"${createHash('sha256')
+    .update(`${media.telegramFileUniqueId}:${size}`)
+    .digest('base64url')
+    .slice(0, 27)}"`;
   const ifNoneMatch = request.headers.get('if-none-match');
   if (ifNoneMatch && etagMatches(ifNoneMatch, etag)) {
     return new Response(null, {

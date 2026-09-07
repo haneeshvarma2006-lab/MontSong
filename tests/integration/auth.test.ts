@@ -40,6 +40,22 @@ afterEach(async () => {
   await prisma.session.deleteMany({});
 });
 
+describe('a malformed session cookie', () => {
+  it('is rejected as unauthenticated rather than crashing the route', async () => {
+    // `%` is not a valid percent-escape. decodeURIComponent throws on it, and
+    // an unguarded throw here turned a junk cookie into a 500 — an error page
+    // where a 401 belongs.
+    for (const value of ['%', '%zz', 'a%E0%A4%A']) {
+      const response = await adminAudioList(
+        makeRequest('/api/admin/audio', {
+          headers: { cookie: `${SESSION_COOKIE_NAME}=${value}` },
+        }),
+      );
+      expect(response.status).toBe(401);
+    }
+  });
+});
+
 describe('sign in', () => {
   it('accepts the owner and issues a session', async () => {
     const response = await signIn();
