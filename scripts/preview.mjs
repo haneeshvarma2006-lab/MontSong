@@ -44,7 +44,16 @@ const SKIP_BUILD = argv.includes('--no-build');
 const BASE = `http://127.0.0.1:${APP_PORT}`;
 const WORKSPACE = path.join(ROOT, '.preview');
 const DEMO_USER = 'owner';
-const DEMO_PASSWORD = 'preview-password-1234';
+
+/**
+ * A fresh password every run, printed once to this terminal.
+ *
+ * It was a constant. `next start` binds every interface, so a constant that
+ * ships in the repository means anyone on the same network — a café, a campus,
+ * a shared office — can sign in to a running preview as its owner and upload
+ * files. Random per run, plus the loopback bind below, closes that.
+ */
+const DEMO_PASSWORD = `preview-${randomBytes(9).toString('base64url')}`;
 
 const children = [];
 
@@ -382,7 +391,10 @@ async function main() {
   background('node', [path.join('tests', 'e2e', 'fake-bot-api.mjs'), String(BOT_PORT)], env, 'storage');
   await waitFor(`http://127.0.0.1:${BOT_PORT}/botX/getMe`);
 
-  background('npm', ['run', 'start'], env, 'app');
+  // Loopback only. This is a throwaway instance carrying a generated admin
+  // credential; it has no business being reachable from the rest of the
+  // network. `next start` would otherwise bind 0.0.0.0.
+  background('npm', ['run', 'start', '--', '--hostname', '127.0.0.1'], env, 'app');
   await waitFor(BASE);
 
   if (isNew) {

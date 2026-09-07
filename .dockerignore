@@ -5,6 +5,7 @@ node_modules
 data
 media-cache
 tmp-uploads
+.preview
 coverage
 *.log
 .env
