@@ -84,18 +84,43 @@ cd MontSong
 npm install
 ```
 
-Create your configuration:
+Then configure it:
+
+```bash
+npm run setup
+```
+
+It asks for your bot token, your channel id and a password, generates the
+secrets you should never pick by hand, writes `.env`, applies the database
+schema, and then actually calls Telegram to check the credentials before
+telling you they work — confirming the token, that the channel exists, and
+that the bot is allowed to post to it.
+
+Re-run it any time. Existing values become the defaults, so pressing Enter
+through it changes nothing, and the check at the end is a quick diagnostic
+when something has stopped working.
+
+Then start it:
+
+```bash
+npm run build && npm start
+```
+
+Open <http://localhost:3000>, and sign in at <http://localhost:3000/admin>
+with the username and password you just chose. Add a category, then upload
+your first track.
+
+<details>
+<summary>Configuring it by hand instead</summary>
 
 ```bash
 cp .env.example .env
-npm run auth:secret      # prints AUTH_SECRET=...      → paste into .env
-npm run admin:password   # asks for a password, prints ADMIN_PASSWORD_HASH=... → paste into .env
+npm run auth:secret      # prints AUTH_SECRET=...            → paste into .env
+npm run admin:password   # prints ADMIN_PASSWORD_HASH=...    → paste into .env
 ```
 
-Then fill in `TELEGRAM_BOT_TOKEN` and `TELEGRAM_STORAGE_CHAT_ID` from
-[docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md).
-
-Set up the database and start:
+Fill in `TELEGRAM_BOT_TOKEN` and `TELEGRAM_STORAGE_CHAT_ID` from
+[docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md), then:
 
 ```bash
 npm run db:migrate       # creates data/montsong.db
@@ -103,13 +128,10 @@ npm run db:seed          # optional: a starter set of categories
 npm run dev
 ```
 
-Open <http://localhost:3000>. The admin is at
-<http://localhost:3000/admin>, using `ADMIN_USERNAME` and the password you
-just hashed.
+Check **Admin → Storage → Test connection** afterwards; it runs the same
+checks `npm run setup` does.
 
-First thing to check: **Admin → Storage → Test connection**. It verifies the
-token, finds the channel, and confirms the bot may post there. If that passes,
-uploads will work.
+</details>
 
 ---
 
@@ -137,6 +159,7 @@ download limit entirely. It is Telegram's own software, not a workaround.
 
 | Command | What it does |
 | --- | --- |
+| `npm run setup` | Configure `.env`, apply the schema, verify Telegram — re-runnable |
 | `npm run preview` | The whole site with a demo library, no Telegram bot needed |
 | `npm run dev` | Development server on :3000 |
 | `npm run build` | Production build |

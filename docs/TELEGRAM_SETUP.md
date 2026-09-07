@@ -87,7 +87,13 @@ TELEGRAM_STORAGE_CHAT_ID="-1001234567890"
 
 ## 4. Verify
 
-Start the site, sign in, and go to **Admin → Storage → Test connection**.
+```bash
+npm run setup
+```
+
+Paste in the token and the channel id when it asks, and it runs every check
+below and reports on each one. You can also do it from the running site: sign
+in and go to **Admin → Storage → Test connection**.
 
 A pass tells you three things at once: the token is valid, the channel exists,
 and the bot can see it. A failure names which of the three went wrong.
