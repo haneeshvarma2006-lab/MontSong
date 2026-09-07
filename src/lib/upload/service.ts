@@ -14,7 +14,7 @@ import { getTelegramClient } from '../telegram/client';
 import { formatBytes } from '../format';
 import type { SpooledFile } from './spool';
 
-import type { MediaFile, UploadIntent } from '@/generated/prisma';
+import type { MediaFile, Prisma, UploadIntent } from '@/generated/prisma';
 
 /**
  * The upload pipeline, and the reconciliation guarantee that goes with it.
@@ -201,7 +201,7 @@ export async function storeMedia(
     },
   });
 
-  const media = await prisma.mediaFile.create({
+  const media = await createOrAdoptMediaFile({
     data: {
       id: createId(),
       kind: upload.kind,
@@ -222,6 +222,80 @@ export async function storeMedia(
   });
 
   return { media, intent: updatedIntent };
+}
+
+/**
+ * Create the media row, or adopt the one that already holds these bytes.
+ *
+ * Telegram deduplicates by content: sending a file it already has returns the
+ * same `file_unique_id`, which is unique on MediaFile. An unguarded create
+ * therefore turned "use this artwork on a second track" into a P2002 surfacing
+ * as a generic 500, with the upload intent left open as a phantom orphan.
+ *
+ * The redundant message we just posted is removed, since the stored row points
+ * at the original and nothing will ever reference this one.
+ */
+async function createOrAdoptMediaFile(args: {
+  data: Prisma.MediaFileUncheckedCreateInput;
+}): Promise<MediaFile> {
+  try {
+    return await prisma.mediaFile.create(args);
+  } catch (error) {
+    const isUniqueViolation =
+      typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: string }).code === 'P2002';
+    if (!isUniqueViolation) throw error;
+
+    const existing = await prisma.mediaFile.findUnique({
+      where: { telegramFileUniqueId: args.data.telegramFileUniqueId },
+    });
+    if (!existing) throw error;
+
+    logger.info('upload.media_adopted', {
+      mediaId: existing.id,
+      reason: 'storage returned an identifier we already hold',
+    });
+
+    if (typeof args.data.telegramMessageId === 'number') {
+      await getTelegramClient()
+        .deleteMessage(args.data.telegramMessageId)
+        .catch(() => undefined);
+    }
+
+    return existing;
+  }
+}
+
+/**
+ * Store an image and return its media id, reusing what is already stored.
+ *
+ * Two tracks sharing artwork is ordinary — a set of ringtones from one film,
+ * a default plate across a category — and it used to be a 500. Telegram
+ * returns the same `file_unique_id` for byte-identical content, and
+ * MediaFile.telegramFileUniqueId is unique, so the second upload violated the
+ * constraint and left its intent stranded as an orphan.
+ *
+ * Sharing a row is safe by construction: `retireMedia` reference-counts every
+ * track and category pointing at a media row before deleting anything.
+ *
+ * Checked twice, because the two collisions are different. The sha256 lookup
+ * catches it before spending an upload at all. The P2002 fallback catches the
+ * case where the bytes differ from anything we have recorded but Telegram
+ * still hands back an id we hold — the only authority on that is Telegram, and
+ * we do not hear from it until after the upload.
+ */
+export async function storeImage(
+  upload: ValidatedUpload,
+  caption: string,
+): Promise<string> {
+  const already = await findDuplicate(upload.file.sha256);
+  if (already) return already.id;
+
+  const intent = await createIntent(upload, { cover: caption });
+  const { media } = await storeMedia(upload, intent, { caption });
+  await markIntentCommitted(intent.id, media.id);
+  return media.id;
 }
 
 export async function markIntentCommitted(intentId: string, audioId: string): Promise<void> {

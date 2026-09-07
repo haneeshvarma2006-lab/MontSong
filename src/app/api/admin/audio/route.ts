@@ -1,7 +1,7 @@
 import { requireAdmin } from '@/lib/auth/guard';
 import { UPLOAD_RULE } from '@/lib/auth/rate-limit';
 import { ensurePragmas } from '@/lib/db';
-import { conflict } from '@/lib/errors';
+import { conflict, isAppError } from '@/lib/errors';
 import { errorResponse, json } from '@/lib/http/respond';
 import { logger } from '@/lib/logger';
 import { createAudio, listAudioForAdmin } from '@/lib/repositories/audio';
@@ -10,6 +10,7 @@ import {
   createIntent,
   findDuplicate,
   markIntentCommitted,
+  storeImage,
   storeMedia,
   validateUpload,
 } from '@/lib/upload/service';
@@ -106,23 +107,25 @@ export async function POST(request: Request): Promise<Response> {
       caption: `${metadata.title}${metadata.artist ? ` — ${metadata.artist}` : ''}`.slice(0, 1024),
       durationSec: metadata.durationSec,
       title: metadata.title,
-      performer: metadata.artist,
+      performer: metadata.artist ?? undefined,
     });
 
     // --- Optional cover ------------------------------------------------------
     let coverMediaId: string | null = null;
+    let coverWarning: string | null = null;
     const coverPart = fileByField(spool, 'cover');
     if (coverPart) {
       try {
         await assertSpoolIntact(coverPart);
         const coverUpload = validateUpload(coverPart, 'image');
-        const coverIntent = await createIntent(coverUpload, { for: metadata.title });
-        const stored = await storeMedia(coverUpload, coverIntent, { caption: metadata.title });
-        coverMediaId = stored.media.id;
-        await markIntentCommitted(coverIntent.id, stored.media.id);
+        coverMediaId = await storeImage(coverUpload, metadata.title);
       } catch (error) {
         // Artwork is optional. Losing it must not lose the track that has
-        // already been stored, so record the failure and carry on.
+        // already been stored, so carry on — but say so. This used to be
+        // logged server-side and nowhere else, so the admin saw "201 Created",
+        // assumed the artwork had been saved, and only found out it had not by
+        // noticing the placeholder later.
+        coverWarning = publicReason(error);
         logger.warn('upload.cover_failed', { reason: String(error) });
       }
     }
@@ -131,9 +134,9 @@ export async function POST(request: Request): Promise<Response> {
     const audio = await createAudio({
       title: metadata.title,
       slug: metadata.slug,
-      artist: metadata.artist,
+      artist: metadata.artist ?? undefined,
       type: metadata.type,
-      description: metadata.description,
+      description: metadata.description ?? undefined,
       categoryId: metadata.categoryId ?? null,
       tags: metadata.tags,
       isPublished: metadata.isPublished,
@@ -145,12 +148,30 @@ export async function POST(request: Request): Promise<Response> {
     await markIntentCommitted(intent.id, audio.id);
     logger.info('upload.committed', { audioId: audio.id, bytes: audioPart.bytes });
 
-    return json({ audio: toAdminAudio(audio) }, { status: 201 });
+    return json(
+      {
+        audio: toAdminAudio(audio),
+        ...(coverWarning
+          ? { warning: `The track was saved, but its artwork was not: ${coverWarning}` }
+          : {}),
+      },
+      { status: 201 },
+    );
   } catch (error) {
     return errorResponse(error, { route: 'admin.audio.create', audience: 'admin' });
   } finally {
     await spool?.cleanup();
   }
+}
+
+/**
+ * A reason for a dropped cover that is safe to show the admin.
+ *
+ * An AppError's message is already written for a reader; anything else is an
+ * internal fault whose text belongs in the log, not the response.
+ */
+function publicReason(error: unknown): string {
+  return isAppError(error) ? error.message : 'it could not be stored.';
 }
 
 /**

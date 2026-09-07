@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { vi } from 'vitest';
 
 /**
@@ -163,7 +165,11 @@ export class FakeTelegram {
     const bytes = Buffer.from(await blob.arrayBuffer());
     this.#counter += 1;
     const fileId = `FILE_ID_${this.#counter}`;
-    const fileUniqueId = `UNIQ${this.#counter}`;
+    // Content-addressed, because Telegram's is. Sending bytes it already holds
+    // returns the SAME file_unique_id — that is how it deduplicates. Minting a
+    // fresh id per upload made this fake more forgiving than the real service
+    // and hid a unique-constraint violation on the second use of one image.
+    const fileUniqueId = `UNIQ_${createHash('sha256').update(bytes).digest('hex').slice(0, 16)}`;
     const fileName = (blob as File).name ?? `file-${this.#counter}`;
     const messageId = (this.#nextMessageId += 1);
 
@@ -264,6 +270,14 @@ export function installFakeTelegram(fake: FakeTelegram): () => void {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (!url.includes('api.telegram.org')) {
       throw new Error(`Unexpected network call in tests: ${url}`);
+    }
+    // Honour cancellation the way fetch does. Ignoring it made the fake more
+    // patient than the real thing and hid the fact that an abandoned playback
+    // was being treated as a storage failure and retried.
+    if (init?.signal?.aborted) {
+      const error = new Error('The operation was aborted.');
+      error.name = 'AbortError';
+      throw error;
     }
     return fake.handle(input, init);
   }) as unknown as typeof fetch;

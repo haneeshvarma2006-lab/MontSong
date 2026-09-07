@@ -171,7 +171,16 @@ async function openBody(
     const entry = await cache.withEntry(media.telegramFileUniqueId, async () => {
       // Always fetch the whole file when filling: a partial fill would poison
       // the cache for later full-file downloads.
-      const handle = await openMedia(media, { signal });
+      //
+      // Deliberately not the caller's signal. A media element opens a range
+      // request, takes what it needs and abandons the rest — that is normal
+      // playback, not a reason to abort. Tying the fill to it meant the first
+      // listener's disconnect killed the fill, and `withEntry` single-flights,
+      // so it killed the fill for everyone waiting behind them too. The track
+      // then never cached and every play re-fetched from Telegram. The fill
+      // outlives the request that triggered it because it serves every later
+      // request as well.
+      const handle = await openMedia(media);
       return cache.store(media.telegramFileUniqueId, handle.body, media.fileSize);
     });
 

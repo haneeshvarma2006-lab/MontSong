@@ -173,18 +173,30 @@ export async function deleteCategory(
     if (!target) throw notFound('The destination category no longer exists.');
   }
 
-  return prisma.$transaction(async (tx) => {
+  const destination = options.mode === 'reassign' ? (options.targetCategoryId ?? null) : null;
+
+  const result = await prisma.$transaction(async (tx) => {
     const affected = await tx.audio.count({ where: { categoryId: id } });
 
     await tx.audio.updateMany({
       where: { categoryId: id },
-      data: { categoryId: options.mode === 'reassign' ? options.targetCategoryId : null },
+      data: { categoryId: destination },
     });
 
     await tx.category.delete({ where: { id } });
 
     return { movedAudio: affected };
   });
+
+  // searchText is denormalised, so it still carries the deleted category's
+  // name until it is rebuilt. Every other path that changes a track's category
+  // does this; without it here, a deleted category stayed searchable and the
+  // destination category did not match the tracks it had just received.
+  // Deliberately after the commit: the helper uses its own connection and
+  // would not see this transaction's writes from inside it.
+  if (result.movedAudio > 0) await refreshSearchTextForCategory(destination);
+
+  return result;
 }
 
 async function assertSlugFree(slug: string, excludeId?: string): Promise<string> {
@@ -196,9 +208,13 @@ async function assertSlugFree(slug: string, excludeId?: string): Promise<string>
 
 /**
  * Rebuild the denormalised search text for every track in a category.
- * Called after a rename so search keeps matching the new name.
+ *
+ * Called after anything that changes which category name a track should match
+ * on: a rename, and also a delete, which moves tracks to another category or
+ * out of one entirely. `null` addresses the uncategorised bucket, which is
+ * where a delete without a destination leaves them.
  */
-export async function refreshSearchTextForCategory(categoryId: string): Promise<void> {
+export async function refreshSearchTextForCategory(categoryId: string | null): Promise<void> {
   const tracks = await prisma.audio.findMany({
     where: { categoryId },
     select: {

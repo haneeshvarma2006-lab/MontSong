@@ -65,6 +65,13 @@ export async function openMedia(
   try {
     return await client.openFile(filePath, options);
   } catch (error) {
+    // A caller giving up is not a stale path. Browsers abandon media range
+    // requests as a matter of course, and treating that as a storage failure
+    // spent a real getFile call and cleared a perfectly good cached path on
+    // every abandoned connection — so the busier a track got, the more often
+    // its path was thrown away.
+    if (isAbort(error) || options.signal?.aborted) throw error;
+
     logger.warn('storage.open_retry', { mediaId: media.id, reason: String(error) });
 
     await prisma.mediaFile
@@ -105,4 +112,17 @@ export async function deleteStoredMedia(media: MediaFile): Promise<boolean> {
   }
 
   return removed;
+}
+
+/**
+ * Did this error come from someone cancelling, rather than storage failing?
+ *
+ * `fetch` rejects with a DOMException named AbortError; an AbortSignal's own
+ * `reason` defaults to one. Both shapes appear depending on where the abort is
+ * observed, so match on the name rather than the class.
+ */
+function isAbort(error: unknown): boolean {
+  return (
+    error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
+  );
 }

@@ -18,10 +18,21 @@ const trimmed = (max: number) => z.string().trim().max(max);
 const shortText = (max: number, label: string) =>
   trimmed(max).min(1, `${label} is required.`);
 
+/**
+ * A text field the user may leave blank — and may also blank out later.
+ *
+ * The distinction matters on a partial update, where `undefined` means "not
+ * mentioned, leave it alone" and `null` means "clear it". Mapping an empty
+ * string to `undefined` collapses the two, so emptying Artist or Description
+ * in the admin form reported success and silently changed nothing: every
+ * partial-update repository skips `undefined` keys by design. Empty means
+ * cleared, so it maps to `null`.
+ */
 const optionalText = (max: number) =>
   trimmed(max)
+    .nullable()
     .optional()
-    .transform((value) => (value === '' ? undefined : value));
+    .transform((value) => (value === '' ? null : value));
 
 /**
  * Slugs are lowercase, hyphen-separated, and never start or end with a hyphen.

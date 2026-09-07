@@ -62,22 +62,35 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.__montsongPrisma = prisma;
 }
 
-let pragmasApplied = false;
+let pragmaRun: Promise<void> | null = null;
 
 /**
  * Apply connection pragmas. Called lazily from the app's first database touch
  * rather than at import time so that importing this module stays side-effect
  * free for tests.
+ *
+ * The in-flight promise is what is memoised, not a boolean. A boolean set
+ * before the awaits let a concurrent caller return immediately and start
+ * querying while `foreign_keys = ON` had not been applied yet — every request
+ * racing the first one ran without referential integrity. Callers now await
+ * the same run. A failed run is not memoised, so it is retried rather than
+ * leaving the connection unconfigured for the life of the process.
  */
 export async function ensurePragmas(): Promise<void> {
-  if (pragmasApplied) return;
-  pragmasApplied = true;
-  try {
-    await prisma.$executeRawUnsafe('PRAGMA journal_mode = WAL;');
-    await prisma.$executeRawUnsafe('PRAGMA busy_timeout = 5000;');
-    await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON;');
-    await prisma.$executeRawUnsafe('PRAGMA synchronous = NORMAL;');
-  } catch (error) {
-    logger.warn('db.pragmas_failed', { error: String(error) });
-  }
+  pragmaRun ??= (async () => {
+    try {
+      await prisma.$executeRawUnsafe('PRAGMA journal_mode = WAL;');
+      await prisma.$executeRawUnsafe('PRAGMA busy_timeout = 5000;');
+      await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON;');
+      await prisma.$executeRawUnsafe('PRAGMA synchronous = NORMAL;');
+    } catch (error) {
+      logger.warn('db.pragmas_failed', { error: String(error) });
+      pragmaRun = null;
+      throw error;
+    }
+  })();
+
+  // A pragma failure must not take the request down with it: the connection is
+  // merely unconfigured, and the retry above will try again next time.
+  await pragmaRun.catch(() => undefined);
 }

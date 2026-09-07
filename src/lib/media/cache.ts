@@ -120,6 +120,16 @@ export async function store(
       createWriteStream(tempPath),
     );
 
+    // A short read must never be committed. `lookup` validates a cached file
+    // against the byte count recorded here, so a truncated fill would record
+    // its own truncated length, validate against itself forever, and be served
+    // under the full Content-Length taken from the media row — a permanently
+    // clipped track that only a manual cache purge would fix. The temporary
+    // file is discarded instead, and the caller streams through from Telegram.
+    if (expectedBytes !== undefined && written !== expectedBytes) {
+      throw new Error(`cache fill was ${written} bytes, expected ${expectedBytes}`);
+    }
+
     await rename(tempPath, finalPath);
   } catch (error) {
     await rm(tempPath, { force: true }).catch(() => undefined);

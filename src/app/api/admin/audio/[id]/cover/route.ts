@@ -8,7 +8,7 @@ import * as cache from '@/lib/media/cache';
 import { getAudio } from '@/lib/repositories/audio';
 import { toAdminAudio } from '@/lib/serializers';
 import { deleteStoredMedia } from '@/lib/telegram/storage';
-import { createIntent, markIntentCommitted, storeMedia, validateUpload } from '@/lib/upload/service';
+import { storeImage, validateUpload } from '@/lib/upload/service';
 import { assertSpoolIntact, fileByField, spoolMultipart } from '@/lib/upload/spool';
 
 /**
@@ -45,12 +45,11 @@ export async function POST(
     await assertSpoolIntact(part);
 
     const upload = validateUpload(part, 'image');
-    const intent = await createIntent(upload, { coverFor: audio.id });
-    const { media } = await storeMedia(upload, intent, { caption: audio.title });
-    await markIntentCommitted(intent.id, media.id);
+    // Reuses an already-stored image rather than colliding on it; see storeImage.
+    const mediaId = await storeImage(upload, audio.title);
 
     const previousCover = audio.cover;
-    await prisma.audio.update({ where: { id }, data: { coverMediaId: media.id } });
+    await prisma.audio.update({ where: { id }, data: { coverMediaId: mediaId } });
 
     if (previousCover) await retireMedia(previousCover.id);
 

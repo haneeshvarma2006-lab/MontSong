@@ -526,6 +526,12 @@ export class TelegramClient {
         cache: 'no-store',
       });
     } catch (error) {
+      // A cancelled download is not an outage. Dressing an abort up as
+      // `storage_unavailable` put "Could not reach the media storage service"
+      // in the log every time somebody skipped a track, which buries the real
+      // outages among thousands of ordinary ones. Let it through as itself.
+      if (options.signal?.aborted) throw error;
+
       throw storageUnavailable('Could not reach the media storage service.', {
         internal: describeError(error),
         cause: error,
