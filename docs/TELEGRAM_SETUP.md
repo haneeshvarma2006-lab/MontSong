@@ -98,6 +98,8 @@ and the bot can see it. A failure names which of the three went wrong.
 | "The configured storage chat could not be found" | The id is wrong, or the bot was never added to the channel. Re-check step 3, and confirm the bot is an administrator. |
 | "The bot does not have permission to post" | Add it as an administrator with "Post Messages" enabled. |
 | "The storage chat is a private chat" (warning) | It works, but a private channel is safer — see step 2. |
+| "A network proxy or firewall refused to pass the request" | Nothing is wrong with your token or channel — the request never left the machine. The host running MontSong must be allowed to make outbound HTTPS requests to `api.telegram.org`. Common on locked-down company networks, some university Wi-Fi, and sandboxed CI runners. |
+| "something on the network answered in its place" | Same class of problem: a captive portal, ISP landing page or transparent proxy replied instead of Telegram. Check the connection, DNS, and any proxy settings. |
 
 ---
 

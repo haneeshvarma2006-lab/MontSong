@@ -240,8 +240,14 @@ export class TelegramClient {
       } catch (error) {
         lastError = error;
         if (attempt === MAX_ATTEMPTS || response.status < 500) {
-          throw storageUnavailable('The media storage service returned an unreadable response.', {
-            internal: `status=${response.status}`,
+          // The API always answers JSON, even for its own errors. Anything
+          // else means we never reached it: a proxy, firewall, captive portal
+          // or ISP landing page answered in its place. Saying "unreadable
+          // response" sends the owner hunting for a credential problem that
+          // is not there, so name the actual class of failure instead.
+          throw storageUnavailable(intercepted(response), {
+            internal:
+              `status=${response.status} content-type=${response.headers.get('content-type') ?? 'none'}`,
             cause: error,
           });
         }
@@ -609,6 +615,24 @@ export class TelegramClient {
 function durationOf(file: TelegramAudio | TelegramDocument): number | undefined {
   const value = (file as TelegramAudio).duration;
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Describe a response that was not JSON.
+ *
+ * The Bot API answers JSON for every outcome including its own errors, so a
+ * non-JSON body means the request never arrived: something on the path
+ * answered instead. The status narrows which something. Kept free of any
+ * mention of the backend — these messages can surface outside the admin.
+ */
+function intercepted(response: Response): string {
+  if (response.status === 407 || response.status === 511) {
+    return 'A network proxy demanded authentication before it would pass the request to the media storage service. Check this server’s proxy settings.';
+  }
+  if (response.status === 403 || response.status === 451) {
+    return 'A network proxy or firewall refused to pass the request to the media storage service. Check that this server is allowed to make outbound HTTPS requests to it.';
+  }
+  return `Could not reach the media storage service: something on the network answered in its place (HTTP ${response.status}). Check this server’s internet access, DNS, and any proxy or firewall in between.`;
 }
 
 function formOf(fields: Record<string, string>): FormData {
